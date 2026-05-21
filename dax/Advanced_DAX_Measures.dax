@@ -1,0 +1,584 @@
+// ============================================================
+//  VAULTSENTINEL CORP — ADVANCED DAX MEASURES LIBRARY
+//  Power BI Fraud Risk Intelligence Platform
+//  v2.1 — Advanced Analytics Extension
+//  Author: Lucas Reyes | BI Architecture Team
+// ============================================================
+//
+//  This file extends VaultSentinel_FraudMeasures.dax with:
+//  1. Cohort Analysis (Customer Acquisition Cohorts)
+//  2. Running Totals & Cumulative Analytics
+//  3. Dynamic Ranking & TOPN Measures
+//  4. Risk-Adjusted Performance Metrics
+//  5. Anomaly Score Calculations (DAX)
+//  6. What-If Parameter Measures (Threshold Sensitivity)
+//  7. Advanced Time Intelligence (Fiscal Year, Rolling Avg)
+//  8. Conditional KPI Formatting & Status Labels
+//  9. Performance-Optimized Patterns
+//  10. Executive Scorecard Measures
+// ============================================================
+
+
+// ============================================================
+//  1. COHORT ANALYSIS — Customer Acquisition by Quarter
+// ============================================================
+
+[Customer Acquisition Quarter] =
+    VAR OpenDate = MAX(CustomerRiskProfiles[account_open_date])
+    RETURN
+        "Q" & FORMAT(QUARTER(OpenDate), "0") & " "
+            & YEAR(OpenDate)
+
+[Cohort Fraud Rate (%)] =
+    DIVIDE(
+        CALCULATE(
+            COUNTROWS(Transactions),
+            Transactions[fraud_flag] = 1
+        ),
+        COUNTROWS(Transactions),
+        0
+    )
+
+[Cohort Net Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        USERELATIONSHIP(Transactions[customer_id], CustomerRiskProfiles[customer_id])
+    )
+
+[Months Since Account Opened] =
+    DATEDIFF(
+        MAX(CustomerRiskProfiles[account_open_date]),
+        TODAY(),
+        MONTH
+    )
+
+[Customer Lifetime Fraud Loss ($)] =
+    SUMX(
+        RELATEDTABLE(Transactions),
+        IF(Transactions[fraud_flag] = 1, Transactions[amount_usd], 0)
+    )
+
+[Avg Fraud Loss Per Customer ($)] =
+    DIVIDE(
+        [Net Fraud Loss ($)],
+        DISTINCTCOUNT(Transactions[customer_id]),
+        0
+    )
+
+
+// ============================================================
+//  2. RUNNING TOTALS & CUMULATIVE ANALYTICS
+// ============================================================
+
+[YTD Cumulative Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESYTD(Dim_Date[Date])
+    )
+
+[Running Total Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        FILTER(
+            ALL(Dim_Date[Date]),
+            Dim_Date[Date] <= MAX(Dim_Date[Date])
+        )
+    )
+
+[Running Total Transactions] =
+    CALCULATE(
+        [Total Transactions],
+        FILTER(
+            ALL(Dim_Date[Date]),
+            Dim_Date[Date] <= MAX(Dim_Date[Date])
+        )
+    )
+
+[Cumulative Fraud Rate (%)] =
+    DIVIDE(
+        CALCULATE(
+            [Total Fraud Transactions],
+            FILTER(
+                ALL(Dim_Date[Date]),
+                Dim_Date[Date] <= MAX(Dim_Date[Date])
+            )
+        ),
+        [Running Total Transactions],
+        0
+    )
+
+[Remaining Annual Fraud Budget ($)] =
+    VAR AnnualTarget = 4200000    -- $4.2M board-approved target
+    RETURN AnnualTarget - [YTD Cumulative Fraud Loss ($)]
+
+[Budget Burn Rate (%)] =
+    VAR AnnualTarget = 4200000
+    RETURN DIVIDE([YTD Cumulative Fraud Loss ($)], AnnualTarget, 0)
+
+
+// ============================================================
+//  3. DYNAMIC RANKING & TOPN MEASURES
+// ============================================================
+
+[Channel Fraud Loss Rank] =
+    RANKX(
+        ALL(Transactions[channel]),
+        [Net Fraud Loss ($)],
+        ,
+        DESC,
+        Dense
+    )
+
+[Top 3 Channels by Fraud Loss] =
+    IF(
+        [Channel Fraud Loss Rank] <= 3,
+        [Net Fraud Loss ($)],
+        BLANK()
+    )
+
+[Customer Risk Score Rank] =
+    RANKX(
+        ALL(CustomerRiskProfiles[customer_id]),
+        MAX(CustomerRiskProfiles[composite_risk_score]),
+        ,
+        DESC,
+        Dense
+    )
+
+[Fraud Type Rank by Volume] =
+    RANKX(
+        ALL(Transactions[fraud_type]),
+        [Total Fraud Transactions],
+        ,
+        DESC,
+        Dense
+    )
+
+[Analyst Caseload Rank] =
+    RANKX(
+        ALL(FraudCases[assigned_analyst]),
+        [Open Cases],
+        ,
+        DESC,
+        Dense
+    )
+
+[Top 5 Highest Risk Customers] =
+    IF(
+        [Customer Risk Score Rank] <= 5,
+        MAX(CustomerRiskProfiles[composite_risk_score]),
+        BLANK()
+    )
+
+
+// ============================================================
+//  4. RISK-ADJUSTED PERFORMANCE METRICS
+// ============================================================
+
+[Risk-Adjusted Return on Fraud Ops ($)] =
+    VAR FraudLossPrevented =
+        -- Estimated loss that would have occurred at industry average rate (21 bps)
+        CALCULATE([Total Transaction Volume ($)]) * 0.0021
+            - [Net Fraud Loss ($)]
+    VAR EstimatedOpsCost = 2800000    -- Estimated annual fraud ops cost ($2.8M)
+    RETURN FraudLossPrevented - EstimatedOpsCost
+
+[Fraud Prevention ROI (%)] =
+    VAR BaselineLoss = [Total Transaction Volume ($)] * 0.0021
+    VAR ActualLoss   = [Net Fraud Loss ($)]
+    VAR LossPrevented = BaselineLoss - ActualLoss
+    VAR OpsCost = 2800000
+    RETURN DIVIDE(LossPrevented - OpsCost, OpsCost, 0)
+
+[Cost Per Alert ($)] =
+    VAR EstimatedAnalystCostPerHour = 65    -- $65/hr blended analyst cost
+    VAR AvgMinutesPerAlert = 18             -- Average minutes per alert review
+    RETURN EstimatedAnalystCostPerHour * (AvgMinutesPerAlert / 60)
+
+[False Positive Annual Cost ($)] =
+    VAR FalsePositiveCount =
+        CALCULATE(
+            COUNTROWS(Transactions),
+            Transactions[resolution_status] = "FALSE_POSITIVE"
+        )
+    VAR CostPerAlert = [Cost Per Alert ($)]
+    RETURN FalsePositiveCount * CostPerAlert * 12    -- Annualized
+
+[Effective Fraud Loss Per Analyst ($)] =
+    VAR AnalystCount = 42
+    RETURN DIVIDE([Net Fraud Loss ($)], AnalystCount, 0)
+
+[Chargeback Efficiency Score] =
+    VAR RecoveryRate = [Chargeback Recovery Rate (%)]
+    VAR AvgResolutionDays = [Avg Case Resolution Days]
+    VAR SpeedBonus = MAX(0, 1 - (AvgResolutionDays / 30))
+    RETURN (RecoveryRate * 0.7) + (SpeedBonus * 0.3)
+
+
+// ============================================================
+//  5. ANOMALY SCORE CALCULATIONS (DAX Approximations)
+// ============================================================
+
+[Amount Z-Score Approximation] =
+    VAR CurrentAmount = MAX(Transactions[amount_usd])
+    VAR CustomerMean =
+        CALCULATE(
+            AVERAGE(Transactions[amount_usd]),
+            ALLEXCEPT(Transactions, Transactions[customer_id])
+        )
+    VAR CustomerStdDev =
+        CALCULATE(
+            STDEV.P(Transactions[amount_usd]),
+            ALLEXCEPT(Transactions, Transactions[customer_id])
+        )
+    RETURN
+        IF(
+            CustomerStdDev = 0,
+            0,
+            DIVIDE(CurrentAmount - CustomerMean, CustomerStdDev, 0)
+        )
+
+[Amount Anomaly Label] =
+    VAR ZScore = [Amount Z-Score Approximation]
+    RETURN
+        SWITCH(
+            TRUE(),
+            ABS(ZScore) >= 5,   "⚠ EXTREME ANOMALY",
+            ABS(ZScore) >= 3.5, "🔴 CRITICAL ANOMALY",
+            ABS(ZScore) >= 2.5, "🟠 HIGH ANOMALY",
+            ABS(ZScore) >= 1.5, "🟡 MODERATE ANOMALY",
+            "✓ NORMAL"
+        )
+
+[Time Anomaly Score] =
+    VAR TxnHour =
+        HOUR(MAX(Transactions[transaction_time]))
+    RETURN
+        SWITCH(
+            TRUE(),
+            TxnHour >= 0  && TxnHour <= 3,  30,
+            TxnHour >= 23,                   25,
+            TxnHour >= 4  && TxnHour <= 6,  10,
+            0
+        )
+
+[IP Risk Category] =
+    VAR Score = MAX(Transactions[ip_reputation_score])
+    RETURN
+        SWITCH(
+            TRUE(),
+            Score < 20, "🔴 MALICIOUS",
+            Score < 40, "🟠 SUSPICIOUS",
+            Score < 60, "🟡 NEUTRAL",
+            Score < 80, "🟢 TRUSTED",
+            "✅ HIGHLY TRUSTED"
+        )
+
+[Velocity Anomaly Flag] =
+    VAR V1H = MAX(Transactions[velocity_count_1h])
+    VAR V24H = MAX(Transactions[velocity_count_24h])
+    RETURN
+        SWITCH(
+            TRUE(),
+            V1H >= 8,  "🔴 CRITICAL VELOCITY",
+            V1H >= 5,  "🟠 HIGH VELOCITY",
+            V24H >= 15, "🟡 ELEVATED DAILY VELOCITY",
+            "✓ NORMAL"
+        )
+
+[Composite Anomaly Label] =
+    VAR MLScore = MAX(Transactions[ml_model_score])
+    VAR RiskScore = MAX(Transactions[risk_score])
+    RETURN
+        SWITCH(
+            TRUE(),
+            MLScore >= 90 && RiskScore >= 80, "🔴 CRITICAL — IMMEDIATE ACTION",
+            MLScore >= 75 && RiskScore >= 70, "🟠 HIGH — ANALYST REVIEW",
+            MLScore >= 60 && RiskScore >= 50, "🟡 MEDIUM — MONITOR",
+            MLScore >= 40 && RiskScore >= 30, "🔵 LOW — QUEUE",
+            "✅ CLEARED"
+        )
+
+
+// ============================================================
+//  6. WHAT-IF PARAMETER MEASURES (Threshold Sensitivity)
+// ============================================================
+// Usage: Create a What-If parameter named "Alert Threshold" (range 50–95, step 1)
+// Then use [Alert Threshold Value] in these measures
+
+[Alerts at Custom Threshold] =
+    VAR Threshold = 'Alert Threshold'[Alert Threshold Value]
+    RETURN
+        CALCULATE(
+            COUNTROWS(Transactions),
+            Transactions[ml_model_score] >= Threshold
+        )
+
+[True Positives at Custom Threshold] =
+    VAR Threshold = 'Alert Threshold'[Alert Threshold Value]
+    RETURN
+        CALCULATE(
+            COUNTROWS(Transactions),
+            Transactions[ml_model_score] >= Threshold,
+            Transactions[fraud_flag] = 1
+        )
+
+[False Positives at Custom Threshold] =
+    VAR Threshold = 'Alert Threshold'[Alert Threshold Value]
+    RETURN
+        CALCULATE(
+            COUNTROWS(Transactions),
+            Transactions[ml_model_score] >= Threshold,
+            Transactions[fraud_flag] = 0
+        )
+
+[Precision at Custom Threshold] =
+    DIVIDE(
+        [True Positives at Custom Threshold],
+        [Alerts at Custom Threshold],
+        0
+    )
+
+[Recall at Custom Threshold] =
+    DIVIDE(
+        [True Positives at Custom Threshold],
+        [Total Fraud Transactions],
+        0
+    )
+
+[F1 at Custom Threshold] =
+    VAR P = [Precision at Custom Threshold]
+    VAR R = [Recall at Custom Threshold]
+    RETURN
+        IF(
+            P + R = 0,
+            0,
+            2 * DIVIDE(P * R, P + R, 0)
+        )
+
+[Estimated FP Cost at Custom Threshold] =
+    [False Positives at Custom Threshold] * 19.50    -- $19.50 = avg analyst cost per alert
+
+
+// ============================================================
+//  7. ADVANCED TIME INTELLIGENCE
+// ============================================================
+
+[Rolling 3M Avg Monthly Fraud Loss ($)] =
+    AVERAGEX(
+        DATESINPERIOD(
+            Dim_Date[Date],
+            LASTDATE(Dim_Date[Date]),
+            -3, MONTH
+        ),
+        [Net Fraud Loss ($)]
+    )
+
+[Rolling 6M Avg Monthly Fraud Loss ($)] =
+    AVERAGEX(
+        DATESINPERIOD(
+            Dim_Date[Date],
+            LASTDATE(Dim_Date[Date]),
+            -6, MONTH
+        ),
+        [Net Fraud Loss ($)]
+    )
+
+[Fraud Loss Trend (vs 3M Avg)] =
+    [Net Fraud Loss ($)] - [Rolling 3M Avg Monthly Fraud Loss ($)]
+
+[Fraud Loss Trend Direction] =
+    VAR Delta = [Fraud Loss Trend (vs 3M Avg)]
+    RETURN
+        IF(Delta > 0, "▲ ABOVE TREND — INVESTIGATE",
+        IF(Delta < 0, "▼ BELOW TREND — IMPROVING",
+        "→ ON TREND"))
+
+[Same Week Last Year Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        SAMEPERIODLASTYEAR(Dim_Date[Date])
+    )
+
+[Week-Over-Week Fraud Loss Change (%)] =
+    VAR CurrentWeek = [Net Fraud Loss ($)]
+    VAR PriorWeek =
+        CALCULATE(
+            [Net Fraud Loss ($)],
+            DATEADD(Dim_Date[Date], -7, DAY)
+        )
+    RETURN DIVIDE(CurrentWeek - PriorWeek, PriorWeek, BLANK())
+
+[Days Since Last Major Fraud Incident] =
+    VAR LastCriticalCase =
+        CALCULATE(
+            MAX(FraudCases[case_open_date]),
+            FraudCases[priority] = "CRITICAL"
+        )
+    RETURN DATEDIFF(LastCriticalCase, TODAY(), DAY)
+
+
+// ============================================================
+//  8. CONDITIONAL KPI FORMATTING & STATUS LABELS
+// ============================================================
+
+[Fraud Loss Rate Status] =
+    VAR Rate = [Fraud Loss Rate (bps)]
+    RETURN
+        SWITCH(
+            TRUE(),
+            Rate > 20,  "🔴 CRITICAL — Exceeds 20 bps",
+            Rate > 15,  "🟠 HIGH — Above 15 bps target",
+            Rate > 12,  "🟡 WATCH — Approaching target",
+            Rate <= 12, "🟢 TARGET MET — Below 12 bps"
+        )
+
+[Detection Rate Status] =
+    VAR Rate = [Fraud Detection Rate (%)]
+    RETURN
+        SWITCH(
+            TRUE(),
+            Rate >= 0.95, "🟢 EXCELLENT",
+            Rate >= 0.92, "🟢 ON TARGET",
+            Rate >= 0.88, "🟡 BELOW TARGET — Review model",
+            "🔴 CRITICAL — Immediate model review"
+        )
+
+[Case SLA Status] =
+    VAR AvgDays = [Avg Case Resolution Days]
+    RETURN
+        SWITCH(
+            TRUE(),
+            AvgDays <= 2.5, "🟢 EXCELLENT",
+            AvgDays <= 3.5, "🟢 ON TARGET",
+            AvgDays <= 5.0, "🟡 WATCH — Approaching SLA breach",
+            "🔴 SLA BREACH — Management escalation required"
+        )
+
+[Overall Risk Posture] =
+    VAR FraudRateOK    = [Fraud Loss Rate (bps)] <= 15
+    VAR DetectionOK    = [Fraud Detection Rate (%)] >= 0.92
+    VAR SLAOK          = [Avg Case Resolution Days] <= 3.5
+    VAR ModelOK        = [Model F1 Score] >= 0.90
+    VAR AllGreen       = FraudRateOK && DetectionOK && SLAOK && ModelOK
+    VAR CountOK        = (IF(FraudRateOK,1,0) + IF(DetectionOK,1,0)
+                          + IF(SLAOK,1,0) + IF(ModelOK,1,0))
+    RETURN
+        SWITCH(
+            TRUE(),
+            CountOK = 4, "🟢 ALL SYSTEMS GREEN",
+            CountOK = 3, "🟡 MINOR RISK — 1 indicator off-target",
+            CountOK = 2, "🟠 MODERATE RISK — 2 indicators off-target",
+            CountOK <= 1, "🔴 HIGH RISK — Immediate review required"
+        )
+
+[KPI Sparkline Color] =
+    VAR Change = [MoM Fraud Loss Change (%)]
+    RETURN
+        IF(Change > 0.05, "#FF2D55",       -- Red: significant increase (bad)
+        IF(Change > 0,    "#FFB800",       -- Amber: minor increase
+        IF(Change > -0.05,"#3FB950",       -- Green: minor decrease (good)
+           "#00C7BE")))                    -- Teal: significant improvement
+
+
+// ============================================================
+//  9. PERFORMANCE-OPTIMIZED PATTERNS
+// ============================================================
+
+// Pattern: Use SUMMARIZE + ADDCOLUMNS instead of SUMMARIZECOLUMNS for complex tables
+[Channel Summary Table] =
+    ADDCOLUMNS(
+        SUMMARIZE(
+            Transactions,
+            Transactions[channel]
+        ),
+        "Total Volume",    [Total Transaction Volume ($)],
+        "Fraud Loss",      [Net Fraud Loss ($)],
+        "Fraud Rate",      [Fraud Detection Rate (%)],
+        "Alert Count",     [Alert Volume],
+        "Rank",            [Channel Fraud Loss Rank]
+    )
+
+// Pattern: Variables for multi-step calculations (avoid recalculation)
+[Efficient Fraud Loss Bps] =
+    VAR TotalVol = SUM(Transactions[amount_usd])
+    VAR FraudLoss =
+        SUMX(
+            FILTER(Transactions, Transactions[fraud_flag] = 1),
+            Transactions[amount_usd]
+        )
+    VAR Chargebacks = SUM(Transactions[chargeback_amount_usd])
+    VAR NetLoss = FraudLoss - Chargebacks
+    RETURN
+        IF(TotalVol = 0, BLANK(), (NetLoss / TotalVol) * 10000)
+
+// Pattern: SELECTEDVALUE with fallback for slicer-driven titles
+[Dynamic Page Title] =
+    VAR SelectedChannel = SELECTEDVALUE(Transactions[channel], "All Channels")
+    VAR SelectedPeriod  = SELECTEDVALUE(Dim_Date[Year], "All Years")
+    RETURN
+        "Fraud Intelligence — " & SelectedChannel & " | " & SelectedPeriod
+
+// Pattern: ISFILTERED check for conditional display
+[Show When Channel Filtered] =
+    IF(
+        ISFILTERED(Transactions[channel]),
+        [Net Fraud Loss ($)],
+        BLANK()
+    )
+
+
+// ============================================================
+//  10. EXECUTIVE SCORECARD MEASURES
+// ============================================================
+
+[Board Scorecard — Fraud Loss Rating] =
+    VAR Rate = [Fraud Loss Rate (bps)]
+    RETURN
+        SWITCH(
+            TRUE(),
+            Rate <= 10, "A  — Exceptional",
+            Rate <= 13, "B+ — Above Target",
+            Rate <= 15, "B  — On Target",
+            Rate <= 18, "C  — Below Target — Action Required",
+            Rate <= 21, "D  — Significantly Below Target",
+            "F  — Critical Threshold Breached"
+        )
+
+[Board Scorecard — Model Performance Rating] =
+    VAR F1 = [Model F1 Score]
+    RETURN
+        SWITCH(
+            TRUE(),
+            F1 >= 0.95, "A  — Industry-Leading",
+            F1 >= 0.92, "B+ — Above Target",
+            F1 >= 0.90, "B  — On Target",
+            F1 >= 0.86, "C  — Below Target",
+            F1 >= 0.80, "D  — Significant Degradation",
+            "F  — Model Failure — Emergency Retraining"
+        )
+
+[Board Scorecard — Ops Efficiency Rating] =
+    VAR FPRate = [False Positive Rate (%)]
+    VAR AvgDays = [Avg Case Resolution Days]
+    VAR FPScore = IF(FPRate <= 0.04, 25, IF(FPRate <= 0.06, 20, IF(FPRate <= 0.09, 10, 0)))
+    VAR DayScore = IF(AvgDays <= 2, 25, IF(AvgDays <= 3.5, 20, IF(AvgDays <= 5, 10, 0)))
+    VAR TotalScore = FPScore + DayScore
+    RETURN
+        SWITCH(
+            TRUE(),
+            TotalScore >= 45, "A  — Exceptional Efficiency",
+            TotalScore >= 35, "B  — On Target",
+            TotalScore >= 20, "C  — Improvement Needed",
+            "D  — Operational Review Required"
+        )
+
+[Executive Summary Card] =
+    "FY2024 Fraud Risk: "  & [Board Scorecard — Fraud Loss Rating]
+        & " | Model: " & [Board Scorecard — Model Performance Rating]
+        & " | Ops: "   & [Board Scorecard — Ops Efficiency Rating]
+
+// ============================================================
+//  END OF ADVANCED MEASURES LIBRARY
+//  VaultSentinel Corp | Fraud Risk Analytics Platform v2.1
+// ============================================================

@@ -1,0 +1,483 @@
+// ============================================================
+//  VAULTSENTINEL CORP — FRAUD RISK ANALYTICS PLATFORM
+//  DAX Measures Library v2.1
+//  Power BI Multi-Channel Fraud Intelligence Dashboard
+//  Author: Lucas Reyes | Risk Analytics Team
+//  Last Updated: December 2024
+// ============================================================
+//
+//  TABLE OF CONTENTS
+//  1. Core Volume Metrics
+//  2. Financial Loss Analytics
+//  3. ML Model Performance Metrics
+//  4. Time Intelligence (MTD / QTD / YTD / MoM / YoY)
+//  5. Alert & Case Management KPIs
+//  6. Channel Segmentation Analytics
+//  7. Customer Risk Scoring
+//  8. KPI Card Formatting Helpers
+// ============================================================
+
+
+// ============================================================
+//  1. CORE VOLUME METRICS
+// ============================================================
+
+[Total Transactions] =
+    COUNTROWS(Transactions)
+
+[Total Fraud Transactions] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        Transactions[fraud_flag] = 1
+    )
+
+[Total Legitimate Transactions] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        Transactions[fraud_flag] = 0
+    )
+
+[Fraud Detection Rate (%)] =
+    DIVIDE(
+        [Total Fraud Transactions],
+        [Total Transactions],
+        0
+    )
+
+[Fraud Detection Rate (% Label)] =
+    FORMAT([Fraud Detection Rate (%)], "0.0%")
+
+[Alert Volume] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        NOT(Transactions[alert_rule_triggered] = "NONE")
+    )
+
+
+// ============================================================
+//  2. FINANCIAL LOSS ANALYTICS
+// ============================================================
+
+[Total Transaction Volume ($)] =
+    SUM(Transactions[amount_usd])
+
+[Gross Fraud Loss ($)] =
+    CALCULATE(
+        SUM(Transactions[amount_usd]),
+        Transactions[fraud_flag] = 1
+    )
+
+[Chargeback Recovered ($)] =
+    SUM(Transactions[chargeback_amount_usd])
+
+[Net Fraud Loss ($)] =
+    [Gross Fraud Loss ($)] - [Chargeback Recovered ($)]
+
+[Fraud Loss Rate (bps)] =
+    DIVIDE(
+        [Net Fraud Loss ($)],
+        [Total Transaction Volume ($)],
+        0
+    ) * 10000
+
+[Avg Fraud Transaction Value ($)] =
+    DIVIDE(
+        [Gross Fraud Loss ($)],
+        [Total Fraud Transactions],
+        0
+    )
+
+[Chargeback Recovery Rate (%)] =
+    DIVIDE(
+        [Chargeback Recovered ($)],
+        [Gross Fraud Loss ($)],
+        0
+    )
+
+[Unrecovered Fraud Exposure ($)] =
+    [Gross Fraud Loss ($)] - [Chargeback Recovered ($)]
+
+
+// ============================================================
+//  3. ML MODEL PERFORMANCE METRICS
+// ============================================================
+
+[True Positives] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        Transactions[fraud_flag] = 1,
+        Transactions[resolution_status] = "CONFIRMED_FRAUD"
+    )
+
+[False Positives] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        Transactions[fraud_flag] = 0,
+        Transactions[resolution_status] = "FALSE_POSITIVE"
+    )
+
+[False Negatives] =
+    VAR TotalActualFraud =
+        CALCULATE(COUNTROWS(Transactions), Transactions[fraud_flag] = 1)
+    VAR TruePositiveCount = [True Positives]
+    RETURN TotalActualFraud - TruePositiveCount
+
+[Model Precision (%)] =
+    DIVIDE(
+        [True Positives],
+        [True Positives] + [False Positives],
+        0
+    )
+
+[Model Recall (%)] =
+    DIVIDE(
+        [True Positives],
+        [True Positives] + [False Negatives],
+        0
+    )
+
+[Model F1 Score] =
+    VAR Precision = [Model Precision (%)]
+    VAR Recall    = [Model Recall (%)]
+    RETURN
+        IF(
+            Precision + Recall = 0,
+            0,
+            2 * DIVIDE(Precision * Recall, Precision + Recall, 0)
+        )
+
+[False Positive Rate (%)] =
+    DIVIDE(
+        [False Positives],
+        [Alert Volume],
+        0
+    )
+
+[Avg ML Model Score (Fraud)] =
+    CALCULATE(
+        AVERAGE(Transactions[ml_model_score]),
+        Transactions[fraud_flag] = 1
+    )
+
+[Avg ML Model Score (Legit)] =
+    CALCULATE(
+        AVERAGE(Transactions[ml_model_score]),
+        Transactions[fraud_flag] = 0
+    )
+
+
+// ============================================================
+//  4. TIME INTELLIGENCE (MTD / QTD / YTD / MoM / YoY)
+// ============================================================
+// Requires: Dim_Date table marked as date table
+// Relationship: Transactions[transaction_date] → Dim_Date[Date]
+
+[MTD Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESMTD(Dim_Date[Date])
+    )
+
+[QTD Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESQTD(Dim_Date[Date])
+    )
+
+[YTD Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESYTD(Dim_Date[Date])
+    )
+
+[Prior Month Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        PREVIOUSMONTH(Dim_Date[Date])
+    )
+
+[MoM Fraud Loss Change ($)] =
+    [Net Fraud Loss ($)] - [Prior Month Fraud Loss ($)]
+
+[MoM Fraud Loss Change (%)] =
+    DIVIDE(
+        [MoM Fraud Loss Change ($)],
+        [Prior Month Fraud Loss ($)],
+        BLANK()
+    )
+
+[Prior Year Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        SAMEPERIODLASTYEAR(Dim_Date[Date])
+    )
+
+[YoY Fraud Loss Change (%)] =
+    DIVIDE(
+        [Net Fraud Loss ($)] - [Prior Year Fraud Loss ($)],
+        [Prior Year Fraud Loss ($)],
+        BLANK()
+    )
+
+[Rolling 3M Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESINPERIOD(
+            Dim_Date[Date],
+            LASTDATE(Dim_Date[Date]),
+            -3,
+            MONTH
+        )
+    )
+
+[Rolling 12M Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        DATESINPERIOD(
+            Dim_Date[Date],
+            LASTDATE(Dim_Date[Date]),
+            -12,
+            MONTH
+        )
+    )
+
+
+// ============================================================
+//  5. ALERT & CASE MANAGEMENT KPIs
+// ============================================================
+
+[Total Alerts Generated] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        NOT(Transactions[alert_rule_triggered] = "NONE")
+    )
+
+[Alerts Resolved] =
+    CALCULATE(
+        COUNTROWS(Transactions),
+        NOT(Transactions[alert_rule_triggered] = "NONE"),
+        OR(
+            Transactions[resolution_status] = "CLEARED",
+            Transactions[resolution_status] = "CONFIRMED_FRAUD",
+            Transactions[resolution_status] = "FALSE_POSITIVE"
+        )
+    )
+
+[Alert Resolution Rate (%)] =
+    DIVIDE(
+        [Alerts Resolved],
+        [Total Alerts Generated],
+        0
+    )
+
+[Open Cases] =
+    CALCULATE(
+        COUNTROWS(FraudCases),
+        OR(
+            FraudCases[case_status] = "OPEN",
+            FraudCases[case_status] = "UNDER_INVESTIGATION"
+        )
+    )
+
+[Resolved Cases] =
+    CALCULATE(
+        COUNTROWS(FraudCases),
+        FraudCases[case_status] = "RESOLVED"
+    )
+
+[Avg Case Resolution Days] =
+    AVERAGEX(
+        FILTER(FraudCases, FraudCases[case_status] = "RESOLVED"),
+        FraudCases[resolution_days]
+    )
+
+[Total Amount At Risk ($)] =
+    SUM(FraudCases[amount_at_risk_usd])
+
+[Total Recovered From Cases ($)] =
+    SUM(FraudCases[recovered_amount_usd])
+
+[Case Recovery Rate (%)] =
+    DIVIDE(
+        [Total Recovered From Cases ($)],
+        [Total Amount At Risk ($)],
+        0
+    )
+
+[SAR Filed Count] =
+    CALCULATE(
+        COUNTROWS(FraudCases),
+        FraudCases[sar_filed] = "Y"
+    )
+
+[Escalated Cases] =
+    CALCULATE(
+        COUNTROWS(FraudCases),
+        OR(
+            FraudCases[escalation_flag] = "Y",
+            FraudCases[case_status] = "ESCALATED"
+        )
+    )
+
+
+// ============================================================
+//  6. CHANNEL SEGMENTATION ANALYTICS
+// ============================================================
+
+[Card Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        OR(
+            Transactions[channel] = "CARD_POS",
+            Transactions[channel] = "CARD_CNP"
+        )
+    )
+
+[ACH Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        OR(
+            Transactions[channel] = "ACH_CREDIT",
+            Transactions[channel] = "ACH_DEBIT"
+        )
+    )
+
+[Wire Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        OR(
+            Transactions[channel] = "WIRE_DOMESTIC",
+            Transactions[channel] = "WIRE_INTERNATIONAL"
+        )
+    )
+
+[Digital Fraud Loss ($)] =
+    CALCULATE(
+        [Net Fraud Loss ($)],
+        OR(
+            Transactions[channel] = "DIGITAL_WALLET",
+            Transactions[channel] = "DIGITAL_TRANSFER"
+        )
+    )
+
+[Channel Fraud Loss Share (%)] =
+    DIVIDE(
+        [Net Fraud Loss ($)],
+        CALCULATE([Net Fraud Loss ($)], ALL(Transactions[channel])),
+        0
+    )
+
+[Highest Risk Channel] =
+    CALCULATE(
+        FIRSTNONBLANK(Transactions[channel], 1),
+        TOPN(
+            1,
+            SUMMARIZE(
+                Transactions,
+                Transactions[channel],
+                "FraudRate",
+                    DIVIDE(
+                        CALCULATE(COUNTROWS(Transactions), Transactions[fraud_flag] = 1),
+                        COUNTROWS(Transactions),
+                        0
+                    )
+            ),
+            [FraudRate],
+            DESC
+        )
+    )
+
+
+// ============================================================
+//  7. CUSTOMER RISK SCORING
+// ============================================================
+
+[Total Customers] =
+    COUNTROWS(CustomerRiskProfiles)
+
+[High Risk Customer Count] =
+    CALCULATE(
+        COUNTROWS(CustomerRiskProfiles),
+        OR(
+            CustomerRiskProfiles[risk_tier] = "HIGH",
+            CustomerRiskProfiles[risk_tier] = "CRITICAL"
+        )
+    )
+
+[Critical Risk Customer Count] =
+    CALCULATE(
+        COUNTROWS(CustomerRiskProfiles),
+        CustomerRiskProfiles[risk_tier] = "CRITICAL"
+    )
+
+[Avg Customer Risk Score] =
+    AVERAGE(CustomerRiskProfiles[composite_risk_score])
+
+[Watchlist Customer Count] =
+    CALCULATE(
+        COUNTROWS(CustomerRiskProfiles),
+        CustomerRiskProfiles[watchlist_flag] = "Y"
+    )
+
+[PEP Customer Count] =
+    CALCULATE(
+        COUNTROWS(CustomerRiskProfiles),
+        CustomerRiskProfiles[pep_flag] = "Y"
+    )
+
+[EDD Required Count] =
+    CALCULATE(
+        COUNTROWS(CustomerRiskProfiles),
+        CustomerRiskProfiles[kyc_status] = "ENHANCED_DUE_DILIGENCE"
+    )
+
+[High Risk Customer % of Portfolio] =
+    DIVIDE(
+        [High Risk Customer Count],
+        [Total Customers],
+        0
+    )
+
+
+// ============================================================
+//  8. KPI CARD FORMATTING HELPERS
+// ============================================================
+
+[Fraud Loss Rate Label] =
+    FORMAT([Fraud Loss Rate (bps)], "0.0") & " bps"
+
+[Net Fraud Loss Label] =
+    "$" & FORMAT([Net Fraud Loss ($)] / 1000000, "0.00") & "M"
+
+[F1 Score Label] =
+    FORMAT([Model F1 Score], "0.000")
+
+[MoM Change Label] =
+    VAR Change = [MoM Fraud Loss Change (%)]
+    RETURN
+        IF(
+            ISBLANK(Change),
+            "N/A",
+            IF(
+                Change > 0,
+                "▲ " & FORMAT(ABS(Change), "0.0%"),
+                "▼ " & FORMAT(ABS(Change), "0.0%")
+            )
+        )
+
+[Risk Score Color] =
+    VAR Score = [Avg Customer Risk Score]
+    RETURN
+        SWITCH(
+            TRUE(),
+            Score >= 80, "#FF2D55",
+            Score >= 60, "#FF6B35",
+            Score >= 40, "#FFB800",
+            Score >= 20, "#34C759",
+            "#00C7BE"
+        )
+
+// ============================================================
+//  END OF MEASURES LIBRARY
+//  VaultSentinel Corp | Fraud Risk Analytics Platform v2.1
+// ============================================================

@@ -1,0 +1,18 @@
+# VaultSentinel Corp — Fraud Risk Analytics Platform
+# Python dependencies for data validation and generation scripts
+# Tested on Python 3.9+
+
+# Core data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Data validation
+jsonschema>=4.17.0
+
+# CLI and output formatting
+rich>=13.0.0          # Pretty terminal output (optional, degrades gracefully)
+tabulate>=0.9.0       # Table formatting for validation reports
+
+# Development / testing (not required for production use)
+pytest>=7.4.0
+pytest-cov>=4.1.0

@@ -1,0 +1,71 @@
+# Power BI files (binaries — do not commit PBIX with sensitive data)
+*.pbix
+*.pbit
+
+# Excel working files
+*.xlsx
+*.xlsm
+*.xls
+~$*.xlsx
+
+# Environment & secrets
+.env
+*.env
+.env.*
+secrets.json
+credentials.json
+connection_strings.txt
+*.key
+*.pem
+
+# OS artifacts
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+.env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# SQL Server / Azure Data Studio
+*.bacpac
+*.dacpac
+*.bak
+
+# Temp / log files
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# Screenshots — add real screenshots but ignore temp captures
+screenshots/*.tmp
+screenshots/*.bmp
