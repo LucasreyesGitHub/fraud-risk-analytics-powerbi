@@ -334,4 +334,4 @@ The [`data/fraud_scenarios_2024.csv`](data/fraud_scenarios_2024.csv) documents 1
 ---
 
 *Portfolio project by Lucas Reyes · Fraud Risk & Business Intelligence Analytics · 2024*
-*LinkedIn: [linkedin.com/in/lucasreyes](https://linkedin.com) | GitHub: [github.com/LucasreyesGitHub/fraud-risk-analytics-powerbi](https://github.com/LucasreyesGitHub/fraud-risk-analytics-powerbi)*
+*LinkedIn: [linkedin.com/in/lucasreyes2003](https://www.linkedin.com/in/lucasreyes2003/) | GitHub: [github.com/LucasreyesGitHub/fraud-risk-analytics-powerbi](https://github.com/LucasreyesGitHub/fraud-risk-analytics-powerbi)*
