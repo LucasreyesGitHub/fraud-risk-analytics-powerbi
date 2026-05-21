@@ -250,7 +250,8 @@ What's inside:
 
 Built to demonstrate readiness for Fraud Analyst / BI Developer roles.
 
-GitHub: [link]
+GitHub: https://github.com/LucasreyesGitHub/fraud-risk-analytics-powerbi
+LinkedIn: https://www.linkedin.com/in/lucasreyes2003/
 
 #PowerBI #FraudAnalytics #DataAnalytics #BusinessIntelligence #FinancialCrime
 #DAX #PortfolioProject #DataAnalyst #FraudPrevention #FintechAnalytics
